@@ -1,0 +1,194 @@
+name: CI (Compose + Security)
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+  workflow_dispatch:
+
+# Global defaults
+env:
+  DOCKER_IMAGE: ${{ github.repository }}:${{ github.sha }}
+
+jobs:
+  # --------------------------------
+  # 1) Compose + Build/Test
+  # --------------------------------
+  compose:
+    runs-on: self-hosted
+    env:
+      COMPOSE_PROJECT_NAME: devops5NIDS2
+    steps:
+      - name: Fix permissions (defensive)
+        run: |
+          if command -v sudo >/dev/null 2>&1; then
+            sudo chown -R "$USER:$USER" "${GITHUB_WORKSPACE:-$PWD}" || true
+            sudo chmod -R u+rwX "${GITHUB_WORKSPACE:-$PWD}" || true
+          else
+            chown -R "$USER:$USER" "${GITHUB_WORKSPACE:-$PWD}" || true
+            chmod -R u+rwX "${GITHUB_WORKSPACE:-$PWD}" || true
+          fi
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver: docker
+
+      # Optional: create .env for compose from repo/Actions variables
+      - name: Write .env (optional)
+        run: |
+          cat > .env <<'EOF'
+          APP_ENV=${{ vars.APP_ENV || 'prod' }}
+          PORT=${{ vars.PORT || '8080' }}
+          EOF
+
+      - name: Compose up (if compose file exists)
+        run: |
+          if [ -f "docker-compose.yml" ] || [ -f "compose.yml" ] || [ -f "compose.yaml" ]; then
+            docker compose up -d --pull always --build
+          else
+            echo "No compose file found; skipping."
+          fi
+
+      # --------- Build & Test without Maven installed on host -----------
+      # Use official Maven + JDK 17 container; mounts repo into /workspace
+      - name: Build & test (Maven in Docker)
+        run: |
+          docker run --rm \
+            -v "$PWD":/workspace -w /workspace \
+            maven:3-eclipse-temurin-17 \
+            mvn -B clean verify
+
+      - name: Upload JAR artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-jar
+          path: target/*.jar
+          if-no-files-found: ignore
+
+  # -------------------------------
+  # 2) CodeQL (SAST)
+  # -------------------------------
+  codeql:
+    runs-on: self-hosted
+    needs: compose
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+      # Provide a JDK for CodeQL autobuild (does not require system install)
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: java  # add 'javascript,python' if needed
+      - uses: github/codeql-action/autobuild@v3
+      - uses: github/codeql-action/analyze@v3
+
+  # -----------------------------------------
+  # 3) Dependency Review (PRs only)
+  # -----------------------------------------
+  dependency-review:
+    if: github.event_name == 'pull_request'
+    runs-on: self-hosted
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+
+  # -----------------------------------------
+  # 4) Trivy FS (SCA on repo) → SARIF
+  # -----------------------------------------
+  trivy-fs:
+    runs-on: self-hosted
+    needs: compose
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Trivy filesystem scan
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type: fs
+          format: sarif
+          output: trivy-fs.sarif
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-fs.sarif
+
+  # -----------------------------------------
+  # 5) Gitleaks (Secrets) → SARIF
+  # -----------------------------------------
+  gitleaks:
+    runs-on: self-hosted
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        with:
+          args: detect --no-banner --redact --report-format sarif --report-path gitleaks.sarif
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: gitleaks.sarif
+
+  # -------------------------------------------------------
+  # 6) Image build + Trivy image scan (only if desired)
+  # -------------------------------------------------------
+  image-and-scan:
+    runs-on: self-hosted
+    needs: compose
+    # Job-level if can only use vars/github/needs; default to ON unless BUILD_DOCKER is explicitly 'false'
+    if: vars.BUILD_DOCKER != 'false'
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for Dockerfile
+        id: check_dockerfile
+        run: |
+          if [ -f Dockerfile ]; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build image
+        if: steps.check_dockerfile.outputs.found == 'true'
+        run: docker build -t "${{ env.DOCKER_IMAGE }}" .
+
+      - name: Trivy image scan
+        if: steps.check_dockerfile.outputs.found == 'true'
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: ${{ env.DOCKER_IMAGE }}
+          format: sarif
+          output: trivy-image.sarif
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+
+      - name: Upload SARIF (image)
+        if: steps.check_dockerfile.outputs.found == 'true'
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-image.sarif

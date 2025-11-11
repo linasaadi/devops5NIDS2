@@ -1,4 +1,0 @@
-# Add regexes for false positives if you get noisy scans
-[[rules.allowlist]]
-description = "ignore test tokens"
-regex = '''TEST_[A-Z0-9]{16,32}'''

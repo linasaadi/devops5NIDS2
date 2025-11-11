@@ -93,21 +93,20 @@ jobs:
       actions: read
     steps:
       - uses: actions/checkout@v4
-      # Provide a JDK for CodeQL autobuild (does not require system install)
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
+      - name: Install Maven
+        run: |
+          if ! command -v mvn &> /dev/null; then
+            sudo apt-get update && sudo apt-get install -y maven
+          fi
       - uses: github/codeql-action/init@v3
         with:
-          languages: java  # add 'javascript,python' if needed
-      - name: Build with Maven
-        run: |
-          docker run --rm \
-            -v "$PWD":/workspace -w /workspace \
-            -u $(id -u):$(id -g) \
-            maven:3-eclipse-temurin-17 \
-            mvn -B clean compile -DskipTests
+          languages: java
+      - name: Build
+        run: mvn -B clean compile -DskipTests
       - uses: github/codeql-action/analyze@v3
 
   # -----------------------------------------

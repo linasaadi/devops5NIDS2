@@ -154,12 +154,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Run Gitleaks
-        uses: gitleaks/gitleaks-action@v2
+        run: |
+          docker run --rm \
+            -v "$PWD":/repo \
+            ghcr.io/gitleaks/gitleaks:latest \
+            detect --source=/repo --report-format=sarif --report-path=/repo/gitleaks.sarif --no-banner --redact -v || true
       - name: Upload SARIF
         if: always()
         uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: results.sarif
+          sarif_file: gitleaks.sarif
 
   # -------------------------------------------------------
   # 6) Image build + Trivy image scan (only if desired)

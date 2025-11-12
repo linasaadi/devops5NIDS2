@@ -113,7 +113,6 @@ jobs:
   # 3) Dependency Review (PRs only)
   # -----------------------------------------
   dependency-review:
-    if: github.event_name == 'pull_request'
     runs-on: self-hosted
     permissions:
       contents: read

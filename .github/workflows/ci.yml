@@ -12,10 +12,35 @@ env:
 
 jobs:
   # --------------------------------
+  # 0) Setup n8n
+  # --------------------------------
+  setup-n8n:
+    runs-on: self-hosted
+    steps:
+      - name: Start n8n container
+        run: |
+          # Stop existing n8n if running
+          docker stop n8n 2>/dev/null || true
+          docker rm n8n 2>/dev/null || true
+          
+          # Start n8n
+          docker run -d \
+            --name n8n \
+            --restart always \
+            -p 5678:5678 \
+            -v n8n_data:/home/node/.n8n \
+            n8nio/n8n
+          
+          # Wait for n8n to be ready
+          sleep 10
+          echo "n8n running at http://localhost:5678"
+
+  # --------------------------------
   # 1) Compose + Build/Test
   # --------------------------------
   compose:
     runs-on: self-hosted
+    needs: setup-n8n
     env:
       COMPOSE_PROJECT_NAME: devops5NIDS2
     steps:
@@ -217,3 +242,23 @@ jobs:
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: trivy-image.sarif
+
+  # -------------------------------------------------------
+  # 7) Notify n8n
+  # -------------------------------------------------------
+  notify-n8n:
+    runs-on: self-hosted
+    needs: [setup-n8n, compose, codeql, trivy-fs, gitleaks, image-and-scan]
+    if: always()
+    steps:
+      - name: Notify n8n
+        run: |
+          if [ "${{ contains(needs.*.result, 'failure') }}" == "true" ]; then
+            STATUS="failure"
+          else
+            STATUS="success"
+          fi
+          
+          curl -X POST "http://localhost:5678/webhook/ci-status" \
+            -H "Content-Type: application/json" \
+            -d "{\"status\": \"$STATUS\"}"

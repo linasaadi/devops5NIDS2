@@ -72,7 +72,6 @@ jobs:
         with:
           driver: docker
 
-      # Optional: create .env for compose from repo/Actions variables
       - name: Write .env (optional)
         run: |
           cat > .env <<'EOF'
@@ -88,9 +87,6 @@ jobs:
             echo "No compose file found; skipping."
           fi
 
-      # --------- Build & Test without Maven installed on host -----------
-      # Use official Maven + JDK 17 container; mounts repo into /workspace
-      # Run as current user to avoid permission issues
       - name: Build & test (Maven in Docker)
         run: |
           docker run --rm \
@@ -137,22 +133,19 @@ jobs:
   # -----------------------------------------
   # 3) Dependency Review (PRs only)
   # -----------------------------------------
-# -----------------------------------------
-# 3) Dependency Review (PRs only)
-# -----------------------------------------
-dependency-review:
-  runs-on: self-hosted
-  if: github.event_name == 'pull_request'
-  permissions:
-    contents: read
-    pull-requests: write
-  steps:
-    - uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-    - uses: actions/dependency-review-action@v4
-      with:
-        fail-on-severity: high
+  dependency-review:
+    runs-on: self-hosted
+    if: github.event_name == 'pull_request'  # ✅ Only run for PRs
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # ✅ Required for dependency diff
+      - uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
 
   # -----------------------------------------
   # 4) Trivy FS (SCA on repo) → SARIF
@@ -206,7 +199,6 @@ dependency-review:
   image-and-scan:
     runs-on: self-hosted
     needs: compose
-    # Job-level if can only use vars/github/needs; default to ON unless BUILD_DOCKER is explicitly 'false'
     if: vars.BUILD_DOCKER != 'false'
     permissions:
       contents: read

@@ -39,7 +39,6 @@ jobs:
             chmod -R u+rwX "${GITHUB_WORKSPACE:-$PWD}" || true
           fi
 
-
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -204,9 +203,15 @@ jobs:
         if: steps.check_dockerfile.outputs.found == 'true'
         run: |
           IMAGE_LOWER=$(echo "${{ env.DOCKER_IMAGE }}" | tr '[:upper:]' '[:lower:]')
-          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
-            aquasec/trivy:latest image --format sarif --output trivy-image.sarif \
-            --severity HIGH,CRITICAL --ignore-unfixed "$IMAGE_LOWER"
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$PWD":/output \
+            aquasec/trivy:latest image \
+            --format sarif \
+            --output /output/trivy-image.sarif \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed \
+            "$IMAGE_LOWER"
 
       - name: Upload SARIF (image)
         if: steps.check_dockerfile.outputs.found == 'true'

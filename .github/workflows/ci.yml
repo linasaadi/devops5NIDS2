@@ -5,6 +5,11 @@ on:
     branches: [ "main" ]
   pull_request:
   workflow_dispatch:
+    inputs: # <-- FIX: Define the input expected from n8n/webhook to resolve 422 error
+      resumeUrl:
+        description: 'URL provided by the dispatching client (e.g., n8n workflow URL).'
+        required: false
+        type: string
 
 # Global defaults
 env:
@@ -51,6 +56,7 @@ jobs:
             sudo chown -R "$USER:$USER" "${GITHUB_WORKSPACE}" || true
           else
             rm -rf "${GITHUB_WORKSPACE}"/* "${GITHUB_WORKSPACE}"/.* 2>/dev/null || true
+            chown -R "$USER:$USER" "${GITHUB_WORKSPACE}" || true
           fi
         continue-on-error: true
 
@@ -135,14 +141,14 @@ jobs:
   # -----------------------------------------
   dependency-review:
     runs-on: self-hosted
-    if: github.event_name == 'pull_request'  # ✅ Only run for PRs
+    if: github.event_name == 'pull_request' # ✅ Only run for PRs
     permissions:
       contents: read
       pull-requests: write
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # ✅ Required for dependency diff
+          fetch-depth: 0 # ✅ Required for dependency diff
       - uses: actions/dependency-review-action@v4
         with:
           fail-on-severity: high
@@ -257,6 +263,10 @@ jobs:
             STATUS="success"
           fi
           
+          # Calculate the URL pointing to the current GitHub Actions run
+          RESUME_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          
+          # Send the notification including the resumeUrl in the JSON payload
           curl -X POST "http://localhost:5678/webhook/ci-status" \
             -H "Content-Type: application/json" \
-            -d "{\"status\": \"$STATUS\"}"
+            -d "{\"status\": \"$STATUS\", \"resumeUrl\": \"$RESUME_URL\"}"

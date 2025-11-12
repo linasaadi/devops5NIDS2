@@ -137,16 +137,22 @@ jobs:
   # -----------------------------------------
   # 3) Dependency Review (PRs only)
   # -----------------------------------------
-  dependency-review:
-    runs-on: self-hosted
-    permissions:
-      contents: read
-      pull-requests: write
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/dependency-review-action@v4
-        with:
-          fail-on-severity: high
+# -----------------------------------------
+# 3) Dependency Review (PRs only)
+# -----------------------------------------
+dependency-review:
+  runs-on: self-hosted
+  if: github.event_name == 'pull_request'
+  permissions:
+    contents: read
+    pull-requests: write
+  steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    - uses: actions/dependency-review-action@v4
+      with:
+        fail-on-severity: high
 
   # -----------------------------------------
   # 4) Trivy FS (SCA on repo) → SARIF

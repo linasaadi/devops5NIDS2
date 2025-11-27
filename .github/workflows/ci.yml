@@ -101,12 +101,12 @@ jobs:
             maven:3-eclipse-temurin-17 \
             mvn -B clean verify
 
-      - name: Upload JAR artifact
-        uses: actions/upload-artifact@v3
-        with:
-          name: app-jar
-          path: target/*.jar
-          if-no-files-found: ignore
+     # - name: Upload JAR artifact
+       # uses: actions/upload-artifact@v3
+        #with:
+         # name: app-jar
+          #path: target/*.jar
+          #if-no-files-found: ignore
 
 
   # -------------------------------

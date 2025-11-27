@@ -102,11 +102,12 @@ jobs:
             mvn -B clean verify
 
       - name: Upload JAR artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v3
         with:
           name: app-jar
           path: target/*.jar
           if-no-files-found: ignore
+
 
   # -------------------------------
   # 2) CodeQL (SAST)

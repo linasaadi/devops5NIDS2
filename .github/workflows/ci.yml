@@ -153,6 +153,7 @@ jobs:
       - uses: actions/dependency-review-action@v4
         with:
           fail-on-severity: high
+          #tester l'automatisation
 
   # -----------------------------------------
   # 4) Trivy FS (SCA on repo) → SARIF
